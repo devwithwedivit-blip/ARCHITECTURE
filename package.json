@@ -1,21 +1,12 @@
 {
-  "name": "azimuteresidencial",
+  "name": "4korners-design-studio",
   "version": "1.0.0",
-  "description": "Azimute Residencial website hosted on localhost:3333",
+  "private": true,
+  "description": "4 Korners Design Studio - Architectural Portfolio",
   "scripts": {
-    "build": "echo \"Static build ready\"",
-    "start": "node server.js",
+    "build": "echo \"Static site ready\"",
+    "start": "npx -y serve . -l 3333",
     "dev": "node server.js",
     "preview": "npx -y serve . -l 5000"
-  },
-  "keywords": [
-    "azimute",
-    "residencial",
-    "asl"
-  ],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "three": "^0.186.1"
   }
 }
