@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 90" fill="none">
+  <title>4 KORNERS</title>
+  <defs>
+    <linearGradient id="az-wordmark-optical" x1="24" y1="90" x2="516" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ddd0bc"/>
+      <stop offset=".2" stop-color="#f4eee2"/>
+      <stop offset=".39" stop-color="#fffaf1"/>
+      <stop offset=".415" stop-color="#d2b999"/>
+      <stop offset=".455" stop-color="#eee2cd"/>
+      <stop offset=".67" stop-color="#faf6ed"/>
+      <stop offset=".83" stop-color="#d5c2a8"/>
+      <stop offset="1" stop-color="#f6efe4"/>
+    </linearGradient>
+  </defs>
+  <text x="10" y="68" font-family="'Instrument Serif', Georgia, serif" font-size="74" font-weight="400" fill="url(#az-wordmark-optical)" letter-spacing="4">4 KORNERS</text>
+</svg>

@@ -1,0 +1,20 @@
+{
+  "name": "azimuteresidencial",
+  "version": "1.0.0",
+  "description": "Azimute Residencial website hosted on localhost:3333",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "azimute",
+    "residencial",
+    "asl"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "three": "^0.186.1"
+  }
+}
