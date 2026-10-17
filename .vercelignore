@@ -1,0 +1,9 @@
+# Vercel deployment ignore file
+server.js
+*.log
+.env
+.env.local
+.git
+.github
+node_modules
+scratch

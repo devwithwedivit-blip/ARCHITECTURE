@@ -189,7 +189,7 @@ export function HelicalCarousel({ onOpenViewer }: HelicalCarouselProps) {
 
       // Universe background texture
       textureLoader.load(
-        "/sites/azimute/assets/crystal/azimute-crystal-universe.webp",
+        "/assets/crystal/azimute-crystal-universe.webp",
         (tex) => {
           if (dead) {
             tex.dispose();
@@ -424,7 +424,7 @@ export function HelicalCarousel({ onOpenViewer }: HelicalCarouselProps) {
             className="architecture-still"
             src={
               currentMedia?.texture ||
-              "/sites/azimute/assets/acervo/estar-integrado-horizontal-1280.webp"
+              "/assets/acervo/estar-integrado-horizontal-1280.webp"
             }
             alt=""
             decoding="async"

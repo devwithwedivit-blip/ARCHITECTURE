@@ -2,10 +2,11 @@
   "name": "azimuteresidencial",
   "version": "1.0.0",
   "description": "Azimute Residencial website hosted on localhost:3333",
-  "main": "server.js",
   "scripts": {
+    "build": "echo \"Static build ready\"",
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "preview": "npx -y serve . -l 5000"
   },
   "keywords": [
     "azimute",
