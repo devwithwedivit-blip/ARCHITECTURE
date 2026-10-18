@@ -1,5 +1,5 @@
 /* A full-resolution stage is revealed by a mask; the canvas is never stretched. */
-.architecture-chapter.cinema-tour{--sculpture-expansion:0;height:700vh;isolation:isolate;background:#181c1c}
+.architecture-chapter.cinema-tour{--sculpture-expansion:0;height:100vh;min-height:100svh;isolation:isolate;background:#181c1c;position:relative}
 .cinema-tour .architecture-sticky{height:100svh;min-height:0;background:radial-gradient(ellipse at 50% 44%,#32403855,transparent 68%)}
 .cinema-tour .architectural-depth{inset:0;overflow:hidden;clip-path:inset(calc((1 - var(--sculpture-expansion))*5svh) calc((1 - var(--sculpture-expansion))*4vw) round 3px);background:#181c1c}
 .architecture-still{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:brightness(.64);transition:opacity .7s;pointer-events:none}
@@ -35,12 +35,12 @@
 .architecture-step:not(:disabled):active,.architecture-controls .architecture-open-photo:active{transform:translateY(1px)}
 .architecture-status{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .architecture-chapter.cinema-tour.cinema-fallback,.architecture-chapter.cinema-tour.cinema-reduced{height:100svh;min-height:560px}
-.cinema-fallback .architecture-still,.cinema-reduced .architecture-still{object-fit:contain;filter:none;opacity:1;padding:125px 4vw 150px}
+.cinema-fallback .architecture-still,.cinema-reduced .architecture-still{object-fit:contain;filter:none;opacity:0;display:none}
 .cinema-tour.cinema-fallback .architecture-copy, .cinema-tour.cinema-reduced .architecture-copy{opacity:1;transform:none}
 .cinema-tour.cinema-fallback .architectural-depth,.cinema-tour.cinema-reduced .architectural-depth{inset:0;clip-path:none}
 @media(min-width:1800px){.architecture-controls{bottom:30px}.architecture-photo-title{font-size:2.05rem}}
 @media(max-width:700px){
-  .architecture-chapter.cinema-tour{height:700vh}
+  .architecture-chapter.cinema-tour{height:100vh;min-height:100svh}
   .cinema-tour .architectural-depth{clip-path:inset(calc((1 - var(--sculpture-expansion))*3svh) calc((1 - var(--sculpture-expansion))*4vw) round 3px)}
   .cinema-tour .architecture-copy{top:20%;max-width:95%}.cinema-tour .architecture-copy h2{font-size:14vw}
   .cinema-tour .architecture-bottom{top:104px;left:24px;right:24px;padding:0;font-size:8px;bottom:auto;gap:10px}
@@ -58,7 +58,80 @@
 @media(max-height:620px) and (min-width:701px){.cinema-tour .architecture-bottom{top:90px}.architecture-controls{bottom:14px}.architecture-photo-title{font-size:20px}.cinema-tour .architecture-copy{top:22%}.cinema-tour .architecture-copy h2{font-size:11vh}.cinema-tour .architecture-caption{display:none}}
 @media(prefers-reduced-motion:reduce){.architecture-chapter.cinema-tour{height:100svh}.architecture-still,.architecture-progress::-webkit-progress-value{transition:none}}
 
-/* Fallback Gallery Mode */
-.cinema-fallback .architecture-still{object-fit:cover;filter:brightness(.85);opacity:1;cursor:pointer;pointer-events:auto;transition:opacity .5s ease}
+.cinema-fallback .architecture-bottom { display: none; }
 .cinema-fallback-badge{position:absolute;top:calc(94px + 2.2vh);left:var(--gutter,5vw);z-index:4;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#e8d1b4;background:#12241bcc;padding:6px 14px;border-radius:4px;border:1px solid #dfc6a940;backdrop-filter:blur(8px);pointer-events:none}
 .cinema-tour.cinema-reduced .cinema-canvas{opacity:1;filter:none}
+
+.cinema-fallback-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: 1200px;
+  perspective-origin: 50% 50%;
+  overflow: hidden;
+  pointer-events: auto;
+  user-select: none;
+  touch-action: pan-y;
+  background: radial-gradient(ellipse at 50% 50%, #202b28 0%, #181c1c 70%);
+}
+
+.cinema-fallback-track {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cinema-fallback-card {
+  position: absolute;
+  width: clamp(280px, 58vw, 740px);
+  aspect-ratio: 1672 / 941;
+  border-radius: 8px;
+  transform-style: preserve-3d;
+  transition: transform 0.65s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.65s ease, filter 0.65s ease;
+  cursor: pointer;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cinema-fallback-card {
+    transition: none !important;
+  }
+}
+
+.cinema-card-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(225, 176, 107, 0.45);
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.85), 0 0 25px rgba(0, 0, 0, 0.6);
+  background: #141817;
+}
+
+.cinema-card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.cinema-card-glaze {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, transparent 55%, rgba(0, 0, 0, 0.3) 100%);
+  pointer-events: none;
+}
+
+.cinema-fallback-card.is-active .cinema-card-frame {
+  border-color: rgba(225, 176, 107, 0.95);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.9), 0 0 40px rgba(225, 176, 107, 0.25);
+}

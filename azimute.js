@@ -13,11 +13,21 @@
   publishHero();
   const hasGsap=!!window.gsap, hasScroll=hasGsap&&!!window.ScrollTrigger;
   function setIntroInert(value){document.querySelectorAll('header,main,footer,.motion-toggle').forEach(el=>{el.inert=value;});}
+  function safe(sel) {
+    if (!sel) return [];
+    if (Array.isArray(sel)) return sel.flatMap(s => safe(s));
+    if (typeof sel === 'string') return [...document.querySelectorAll(sel)];
+    return sel.nodeType ? [sel] : [];
+  }
   function finishIntro(){
     const wasActive=introActive;introSettled=true;introActive=false;clearTimeout(introSafety);introTimeline?.kill();
     root.classList.remove('intro-playing');root.classList.add('intro-done');
     setIntroInert(false);
-    if(wasActive&&hasGsap){gsap.set(['.hero__image','.hero__content','.header','.hero__scroll'],{clearProps:'opacity,visibility,transform'});heroState.presence=1;publishHero();heroTimeline?.scrollTrigger?.refresh();heroTimeline?.progress(heroTimeline.scrollTrigger.progress);}
+    if(wasActive&&hasGsap){
+      const heroEls = safe(['.hero__image','.hero__content','.header','.hero__scroll']);
+      if (heroEls.length) gsap.set(heroEls,{clearProps:'opacity,visibility,transform'});
+      heroState.presence=1;publishHero();heroTimeline?.scrollTrigger?.refresh();heroTimeline?.progress(heroTimeline.scrollTrigger.progress);
+    }
   }
   window.azimuteFinishIntro=finishIntro;
   function startIntro(force=false){
@@ -29,23 +39,27 @@
     introActive=true;introSettled=false;introSafety=setTimeout(finishIntro,4200);
     root.classList.remove('intro-done','intro-safe');root.classList.add('intro-playing');
     setIntroInert(true);
-    gsap.set('.entrance__surface',{opacity:1,clipPath:'inset(0% 0% 0% 0%)'});gsap.set('.entrance__light',{opacity:0,xPercent:-100});gsap.set('.entrance__identity',{opacity:1,y:0});
-    heroState.presence=0;heroState.night=0;publishHero();gsap.set(['.hero__content','.header','.hero__scroll'],{opacity:0});
+    const sSurf = safe('.entrance__surface'); if (sSurf.length) gsap.set(sSurf,{opacity:1,clipPath:'inset(0% 0% 0% 0%)'});
+    const sLight = safe('.entrance__light'); if (sLight.length) gsap.set(sLight,{opacity:0,xPercent:-100});
+    const sIdent = safe('.entrance__identity'); if (sIdent.length) gsap.set(sIdent,{opacity:1,y:0});
+    heroState.presence=0;heroState.night=0;publishHero();
+    const sHeroEls = safe(['.hero__content','.header','.hero__scroll']);
+    if (sHeroEls.length) gsap.set(sHeroEls,{opacity:0});
     introTimeline=gsap.timeline({onComplete:()=>{introActive=false;introSettled=true;clearTimeout(introSafety);setIntroInert(false);root.classList.remove('intro-playing');root.classList.add('intro-done');}});
-    if (document.querySelector('.brand-stroke')) introTimeline.fromTo('.brand-stroke',{strokeDasharray:1,strokeDashoffset:1},{strokeDashoffset:0,duration:1.2,ease:'power2.inOut'},0);
-    if (document.querySelector('.brand-orbit')) introTimeline.fromTo('.brand-orbit',{strokeDasharray:1,strokeDashoffset:1},{strokeDashoffset:0,duration:1.1,ease:'power2.out'},0.2);
-    if (document.querySelector('.brand-material')) introTimeline.fromTo('.brand-material',{opacity:0},{opacity:1,duration:.9},0.3);
-    if (document.querySelector('.brand-bearing')) introTimeline.fromTo('.brand-bearing',{opacity:0,y:12},{opacity:1,y:0,duration:.8,ease:'power3.out'},0.55);
-    if (document.querySelector('.entrance__name')) introTimeline.fromTo('.entrance__name',{opacity:0,y:12,clipPath:'inset(0 100% 0 0)'},{opacity:1,y:0,clipPath:'inset(0 0% 0 0)',duration:1,ease:'power3.out'},.55);
-    if (document.querySelector('.entrance__banner')) introTimeline.fromTo('.entrance__banner',{opacity:0,scale:0.96,y:8},{opacity:1,scale:1,y:0,duration:1.1,ease:'power3.out'},.25);
-    introTimeline.to('.entrance__light',{opacity:.8,xPercent:150,duration:2.1,ease:'sine.inOut'},.3)
-      .to('.entrance__identity',{y:-18,opacity:0,duration:.5},1.9)
-      .to('.entrance__surface',{clipPath:'inset(0% 0% 100% 0%)',duration:1.25,ease:'power4.inOut'},2.05)
-      .to('.entrance__light',{opacity:0,duration:.3},2.15)
-      .to(heroState,{presence:1,duration:1.25,ease:'power2.inOut',onUpdate:publishHero},2.1)
-      .to('.header',{opacity:1,duration:.7},2.35)
-      .fromTo('.hero__content',{y:24,opacity:0},{y:0,opacity:1,duration:1,ease:'power3.out'},2.45)
-      .to('.hero__scroll',{opacity:1,duration:.5},2.85);
+    const sStroke = safe('.brand-stroke'); if (sStroke.length) introTimeline.fromTo(sStroke,{strokeDasharray:1,strokeDashoffset:1},{strokeDashoffset:0,duration:1.2,ease:'power2.inOut'},0);
+    const sOrbit = safe('.brand-orbit'); if (sOrbit.length) introTimeline.fromTo(sOrbit,{strokeDasharray:1,strokeDashoffset:1},{strokeDashoffset:0,duration:1.1,ease:'power2.out'},0.2);
+    const sMat = safe('.brand-material'); if (sMat.length) introTimeline.fromTo(sMat,{opacity:0},{opacity:1,duration:.9},0.3);
+    const sBear = safe('.brand-bearing'); if (sBear.length) introTimeline.fromTo(sBear,{opacity:0,y:12},{opacity:1,y:0,duration:.8,ease:'power3.out'},0.55);
+    const sName = safe('.entrance__name'); if (sName.length) introTimeline.fromTo(sName,{opacity:0,y:12,clipPath:'inset(0 100% 0 0)'},{opacity:1,y:0,clipPath:'inset(0 0% 0 0)',duration:1,ease:'power3.out'},.55);
+    const sBanner = safe('.entrance__banner'); if (sBanner.length) introTimeline.fromTo(sBanner,{opacity:0,scale:0.96,y:8},{opacity:1,scale:1,y:0,duration:1.1,ease:'power3.out'},.25);
+    if (sLight.length) introTimeline.to(sLight,{opacity:.8,xPercent:150,duration:2.1,ease:'sine.inOut'},.3);
+    if (sIdent.length) introTimeline.to(sIdent,{y:-18,opacity:0,duration:.5},1.9);
+    if (sSurf.length) introTimeline.to(sSurf,{clipPath:'inset(0% 0% 100% 0%)',duration:1.25,ease:'power4.inOut'},2.05);
+    if (sLight.length) introTimeline.to(sLight,{opacity:0,duration:.3},2.15);
+    introTimeline.to(heroState,{presence:1,duration:1.25,ease:'power2.inOut',onUpdate:publishHero},2.1);
+    const sHeader = safe('.header'); if (sHeader.length) introTimeline.to(sHeader,{opacity:1,duration:.7},2.35);
+    const sContent = safe('.hero__content'); if (sContent.length) introTimeline.fromTo(sContent,{y:24,opacity:0},{y:0,opacity:1,duration:1,ease:'power3.out'},2.45);
+    const sScroll = safe('.hero__scroll'); if (sScroll.length) introTimeline.to(sScroll,{opacity:1,duration:.5},2.85);
   }
   document.querySelector('.skip-intro').addEventListener('click',finishIntro);
   document.querySelector('.skip-link').addEventListener('click',finishIntro);
@@ -68,7 +82,8 @@
   window.addEventListener('scroll',()=>{if(ticking)return;ticking=true;requestAnimationFrame(()=>{updateHeader();ticking=false;})},{passive:true});
   function configureMotion(){
     heroTimeline?.scrollTrigger?.kill();heroTimeline?.kill();
-    if(hasGsap)gsap.set(['.hero__image-frame','.hero__content','.hero__scroll','.hero__side','.hero__reframe'],{clearProps:'all'});
+    const heroFrames = safe(['.hero__image-frame','.hero__content','.hero__scroll','.hero__side','.hero__reframe']);
+    if(hasGsap&&heroFrames.length)gsap.set(heroFrames,{clearProps:'all'});
     const enabled=hasScroll&&!reduced.matches;
     root.classList.toggle('motion-paused',paused||reduced.matches);root.classList.toggle('scroll-motion',enabled);document.querySelector('.hero__content').inert=false;
     motionButton.setAttribute('aria-pressed',String(paused));motionButton.setAttribute('aria-label',paused?'Resume animations':'Reduce animations');motionButton.querySelector('.motion-icon').textContent=paused?'▷':'Ⅱ';
@@ -76,12 +91,12 @@
     if(!hasScroll||reduced.matches){heroState.presence=1;heroState.night=0;publishHero();return;}
     gsap.registerPlugin(ScrollTrigger);
 
-    heroTimeline=gsap.timeline({scrollTrigger:{trigger:'.hero',start:'top top',end:'bottom bottom',scrub:paused?true:.65,invalidateOnRefresh:true},onUpdate:()=>{const content=document.querySelector('.hero__content');const hide=Number(gsap.getProperty(content,'opacity'))<.08;content.inert=hide;}})
-      .to('.hero__content',{y:-50,opacity:0,ease:'none',duration:.24},.15)
-      .to(['.hero__side','.hero__scroll'],{opacity:0,duration:.2},0)
-      .fromTo(heroState,{night:0},{night:1,duration:.39,ease:'sine.inOut',onUpdate:publishHero},.04)
-      .fromTo(heroState,{presence:1},{presence:0,duration:.34,ease:'sine.inOut',onUpdate:publishHero},.66)
-      .to('.hero__reframe',{opacity:1,duration:.17},.82);
+    heroTimeline=gsap.timeline({scrollTrigger:{trigger:'.hero',start:'top top',end:'bottom bottom',scrub:paused?true:.65,invalidateOnRefresh:true},onUpdate:()=>{const content=document.querySelector('.hero__content');if(content){const hide=Number(gsap.getProperty(content,'opacity'))<.08;content.inert=hide;}}});
+    const sContent = safe('.hero__content'); if (sContent.length) heroTimeline.to(sContent,{y:-50,opacity:0,ease:'none',duration:.24},.15);
+    const sSideScroll = safe(['.hero__side','.hero__scroll']); if (sSideScroll.length) heroTimeline.to(sSideScroll,{opacity:0,duration:.2},0);
+    heroTimeline.fromTo(heroState,{night:0},{night:1,duration:.39,ease:'sine.inOut',onUpdate:publishHero},.04)
+      .fromTo(heroState,{presence:1},{presence:0,duration:.34,ease:'sine.inOut',onUpdate:publishHero},.66);
+    const sReframe = safe('.hero__reframe'); if (sReframe.length) heroTimeline.to(sReframe,{opacity:1,duration:.17},.82);
   }
   function configureReveals(){
     revealTweens.forEach(tween=>{tween.scrollTrigger?.kill();tween.revert();});revealTweens=[];

@@ -20,29 +20,59 @@ function getMedia(id) {
   return mediaById.get(id);
 }
 
+// Global Carousel State
 let visible = false;
 let booting = false;
 let initialized = false;
+let is3DActive = false;
 let failed = false;
 let disposed = false;
 let currentIndex = 0;
+let isContextLost = false;
+let restoreTimeout = null;
+
+let isNavigating = false;
+let navSafetyTimeout = null;
+
+let trigger = null;
+let activeRenderer = null;
+let activeCanvas = null;
+let activeScene = null;
+let activeCamera = null;
+let sculptureRef = null;
+let S_module = null;
+
 let refresh = () => {};
 let destroy = () => {};
-let jump = null;
+let jumpTo3D = null;
+let requestDrawFn = () => {};
 
-const fallback = document.createElement('img');
-fallback.className = 'architecture-still';
-fallback.alt = '4 Korners Architectural Project';
-fallback.decoding = 'async';
-fallback.addEventListener('click', () => openCurrentPhoto());
-host.append(fallback);
+// Check WebGL availability with performance caveat check
+export function hasWebGL() {
+  try {
+    const canvas = document.createElement('canvas');
+    const opts = { failIfMajorPerformanceCaveat: true };
+    const gl = canvas.getContext('webgl2', opts) || canvas.getContext('webgl', opts);
+    const supported = !!(gl && (gl instanceof WebGLRenderingContext || (window.WebGL2RenderingContext && gl instanceof WebGL2RenderingContext)));
+    if (gl) {
+      const ext = gl.getExtension('WEBGL_lose_context');
+      // clean up test context
+      if (ext) ext.loseContext();
+    }
+    return supported;
+  } catch (e) {
+    return false;
+  }
+}
 
+// Badge for 2D Fallback Gallery Mode
 const fallbackBadge = document.createElement('div');
 fallbackBadge.className = 'cinema-fallback-badge';
 fallbackBadge.textContent = 'High-Resolution Gallery Mode';
 fallbackBadge.hidden = true;
 host.append(fallbackBadge);
 
+// Interactive UI Controls
 const controls = document.createElement('div');
 controls.className = 'architecture-controls';
 controls.setAttribute('aria-label', 'Interactive 3D Architectural Portfolio');
@@ -111,6 +141,7 @@ controls.append(caption, progress, actions, skip, status);
 sticky.append(controls);
 chapter.classList.add('cinema-tour');
 
+// Synchronize all UI indicators with current project
 function syncPhotoControl(announce = false) {
   ensureMedia();
   const id = tourIds[currentIndex];
@@ -129,13 +160,10 @@ function syncPhotoControl(announce = false) {
   openPhoto.dataset.mediaId = String(id);
   openPhoto.setAttribute('aria-label', `View full project ${currentIndex + 1} of ${tourIds.length}: ${item?.title || ''}`);
 
-  if (item && (!chapter.classList.contains('cinema-ready') || reduced.matches || failed) && fallback.getAttribute('src') !== item.texture) {
-    fallback.src = item.texture || item.src;
-    fallback.style.objectPosition = item.position || 'center';
-  }
   if (announce) status.textContent = `Project ${currentIndex + 1} of ${tourIds.length}. ${item?.title || ''}`;
 }
 
+// Lightbox modal opener
 function openMedia(id, origin = openPhoto) {
   if (disposed || document.hidden || root.classList.contains('viewer-open')) return;
   ensureMedia();
@@ -143,18 +171,203 @@ function openMedia(id, origin = openPhoto) {
   window.dispatchEvent(new CustomEvent('azimute:open-media', { detail: { id, origin } }));
 }
 
-function choose(index, smoothScroll = true) {
-  currentIndex = Math.max(0, Math.min(tourIds.length - 1, index));
-  syncPhotoControl(true);
-  if (jump && !reduced.matches && !failed) {
-    jump(currentIndex, smoothScroll);
-  }
+// ============================================================================
+// 2D CSS 3D Helical Fallback Carousel (Problem 3)
+// ============================================================================
+let fallbackStage = null;
+let fallbackTrack = null;
+let fallbackCards = [];
+
+function buildFallbackCarousel() {
+  if (fallbackStage) return;
+  fallbackStage = document.createElement('div');
+  fallbackStage.className = 'cinema-fallback-stage';
+  fallbackStage.setAttribute('aria-label', '3D Helical Architectural Gallery (High Compatibility Mode)');
+
+  fallbackTrack = document.createElement('div');
+  fallbackTrack.className = 'cinema-fallback-track';
+  fallbackStage.append(fallbackTrack);
+
+  tourIds.forEach((id, idx) => {
+    const item = getMedia(id);
+    const card = document.createElement('div');
+    card.className = 'cinema-fallback-card';
+    card.dataset.index = String(idx);
+    card.dataset.id = String(id);
+
+    const frame = document.createElement('div');
+    frame.className = 'cinema-card-frame';
+
+    const img = document.createElement('img');
+    img.className = 'cinema-card-img';
+    img.alt = item?.alt || item?.title || 'Architectural Project';
+    img.loading = idx < 3 ? 'eager' : 'lazy';
+    img.decoding = 'async';
+    img.src = item?.thumbnail || item?.src || '';
+
+    const glaze = document.createElement('div');
+    glaze.className = 'cinema-card-glaze';
+
+    frame.append(img, glaze);
+    card.append(frame);
+
+    card.addEventListener('click', () => {
+      if (idx === currentIndex) {
+        openMedia(id);
+      } else {
+        goToSlide(idx, true);
+      }
+    });
+
+    fallbackTrack.append(card);
+    fallbackCards.push(card);
+  });
+
+  // Swipe / Drag handling on fallback carousel
+  let fDragActive = false;
+  let fStartX = 0;
+  let fStartY = 0;
+  let fDragging = false;
+
+  fallbackStage.addEventListener('pointerdown', (e) => {
+    fDragActive = true;
+    fDragging = false;
+    fStartX = e.clientX;
+    fStartY = e.clientY;
+  });
+
+  fallbackStage.addEventListener('pointermove', (e) => {
+    if (!fDragActive) return;
+    const dist = Math.hypot(e.clientX - fStartX, e.clientY - fStartY);
+    if (dist > 8) fDragging = true;
+  });
+
+  const finishFallbackDrag = (e) => {
+    if (!fDragActive) return;
+    fDragActive = false;
+    if (fDragging) {
+      const deltaX = e.clientX - fStartX;
+      if (Math.abs(deltaX) > 35) {
+        if (deltaX < 0) goToSlide(currentIndex + 1, true);
+        else goToSlide(currentIndex - 1, true);
+      }
+    }
+  };
+
+  fallbackStage.addEventListener('pointerup', finishFallbackDrag);
+  fallbackStage.addEventListener('pointercancel', () => { fDragActive = false; });
+  fallbackStage.addEventListener('pointerleave', () => { fDragActive = false; });
+
+  host.append(fallbackStage);
+  updateFallbackCarousel(currentIndex, false);
 }
 
+function updateFallbackCarousel(targetIndex, smooth = true) {
+  if (!fallbackStage || !fallbackCards.length) return;
+  const isMobile = window.innerWidth < 768;
+  const radius = isMobile ? 380 : 620;
+  const stepAngle = isMobile ? 22 : 18;
+  const yStep = isMobile ? 18 : 24;
+
+  fallbackCards.forEach((card, idx) => {
+    const offset = idx - targetIndex;
+    const absOffset = Math.abs(offset);
+
+    card.classList.toggle('is-active', offset === 0);
+    if (absOffset > 5) {
+      card.style.display = 'none';
+      return;
+    }
+    card.style.display = '';
+
+    const angleRad = (offset * stepAngle * Math.PI) / 180;
+    const rotY = -offset * stepAngle;
+    const tx = Math.sin(angleRad) * radius;
+    const tz = Math.cos(angleRad) * radius - radius;
+    const ty = -offset * yStep;
+    const scale = Math.max(0.72, 1 - absOffset * 0.055);
+
+    card.style.transform = `translate3d(${tx.toFixed(1)}px, ${ty.toFixed(1)}px, ${tz.toFixed(1)}px) rotateY(${rotY.toFixed(1)}deg) scale(${scale.toFixed(3)})`;
+    card.style.zIndex = String(30 - absOffset);
+    card.style.opacity = String(Math.max(0, 1 - absOffset * 0.22));
+    card.style.filter = offset === 0 ? 'none' : `brightness(${Math.max(0.45, 0.85 - absOffset * 0.14)})`;
+    card.classList.toggle('is-active', offset === 0);
+  });
+}
+
+function switchTo2DFallback() {
+  is3DActive = false;
+  failed = true;
+  chapter.classList.remove('cinema-ready');
+  chapter.classList.add('cinema-fallback');
+  fallbackBadge.hidden = false;
+
+  if (activeCanvas) {
+    activeCanvas.remove();
+    activeCanvas = null;
+  }
+  if (activeRenderer) {
+    try { activeRenderer.dispose(); } catch (e) {}
+    activeRenderer = null;
+  }
+
+  buildFallbackCarousel();
+  updateFallbackCarousel(currentIndex, false);
+  syncPhotoControl(true);
+  setupCarouselScrollTrigger();
+  window.ScrollTrigger?.refresh();
+}
+
+// ============================================================================
+// Single Master goToSlide(index, smooth) Function (Problem 2)
+// ============================================================================
+export function goToSlide(index, smooth = true) {
+  const targetIndex = Math.max(0, Math.min(tourIds.length - 1, Math.round(index)));
+  currentIndex = targetIndex;
+  syncPhotoControl(true);
+
+  clearTimeout(navSafetyTimeout);
+  isNavigating = true;
+  navSafetyTimeout = setTimeout(() => {
+    isNavigating = false;
+  }, 1000);
+
+  // Sync scroll position if ScrollTrigger is active
+  if (trigger) {
+    const targetProgress = is3DActive && S_module
+      ? S_module.progressForPhoto(targetIndex)
+      : (targetIndex / (tourIds.length - 1));
+
+    const targetScroll = trigger.start + (trigger.end - trigger.start) * targetProgress;
+    if (smooth && !root.classList.contains('motion-paused') && !reduced.matches) {
+      window.scrollTo({
+        top: targetScroll,
+        behavior: 'smooth',
+      });
+    } else {
+      window.scrollTo({
+        top: targetScroll,
+        behavior: 'instant',
+      });
+    }
+  }
+
+  // Update 3D helix target
+  if (is3DActive && jumpTo3D) {
+    jumpTo3D(targetIndex);
+  }
+
+  // Update 2D fallback carousel
+  if (!is3DActive) {
+    updateFallbackCarousel(targetIndex, smooth);
+  }
+}
+window.goToSlide = goToSlide;
+
 const openCurrentPhoto = () => openMedia(tourIds[currentIndex]);
-const prevPhoto = () => choose(currentIndex - 1);
-const nextPhoto = () => choose(currentIndex + 1);
-const selectPhoto = () => choose(Number(select.value));
+const prevPhoto = () => goToSlide(currentIndex - 1);
+const nextPhoto = () => goToSlide(currentIndex + 1);
+const selectPhoto = () => goToSlide(Number(select.value));
 
 const skipTour = () => {
   const destination = chapter.nextElementSibling;
@@ -175,65 +388,187 @@ syncPhotoControl();
 const canDisplay = () => !document.hidden && !root.classList.contains('viewer-open');
 const animated = () => canDisplay() && !root.classList.contains('motion-paused');
 
+// Keyboard arrow navigation when carousel chapter is in view
+window.addEventListener('keydown', (e) => {
+  if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA' || document.activeElement?.tagName === 'SELECT') return;
+  const box = chapter.getBoundingClientRect();
+  const inView = box.top < window.innerHeight * 0.95 && box.bottom > window.innerHeight * 0.05;
+  if (!inView) return;
+
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+    if (currentIndex < tourIds.length - 1) {
+      e.preventDefault();
+      goToSlide(currentIndex + 1);
+    }
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+    if (currentIndex > 0) {
+      e.preventDefault();
+      goToSlide(currentIndex - 1);
+    }
+  }
+});
+
+// ============================================================================
+// ScrollTrigger Pinning Setup (Problem 2)
+// ============================================================================
+function setupCarouselScrollTrigger() {
+  if (trigger) {
+    trigger.kill();
+    trigger = null;
+  }
+  if (!window.ScrollTrigger) return;
+
+  const snapPoints = tourIds.map((_, i) =>
+    is3DActive && S_module ? S_module.progressForPhoto(i) : (i / (tourIds.length - 1))
+  );
+
+  trigger = window.ScrollTrigger.create({
+    trigger: chapter,
+    pin: true,
+    start: 'top top',
+    end: () => '+=' + Math.max(window.innerHeight * 4, window.innerHeight * 5.5),
+    scrub: 0.8,
+    invalidateOnRefresh: true,
+    snap: {
+      snapTo: (val) => {
+        const first = snapPoints[0] || 0.05;
+        const last = snapPoints[snapPoints.length - 1] || 0.95;
+        // Snap to extremes to allow clean entry and exit scrolling
+        if (val < first * 0.4) return 0;
+        if (val > last + (1 - last) * 0.6) return 1;
+
+        let closest = snapPoints[0];
+        let minDiff = Math.abs(val - closest);
+        for (let i = 1; i < snapPoints.length; i++) {
+          const diff = Math.abs(val - snapPoints[i]);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closest = snapPoints[i];
+          }
+        }
+        return closest;
+      },
+      duration: { min: 0.15, max: 0.45 },
+      delay: 0.1,
+      ease: 'power2.out',
+      onComplete: () => {
+        isNavigating = false;
+      },
+      onInterrupt: () => {
+        isNavigating = false;
+      },
+    },
+    onUpdate: (self) => {
+      if (is3DActive && S_module) {
+        window.dispatchEvent(new CustomEvent('azimute:carousel-progress', { detail: self.progress }));
+      } else {
+        const newIndex = Math.max(0, Math.min(tourIds.length - 1, Math.round(self.progress * (tourIds.length - 1))));
+        if (currentIndex !== newIndex) {
+          currentIndex = newIndex;
+          syncPhotoControl();
+          updateFallbackCarousel(currentIndex, false);
+        }
+      }
+    },
+    onRefresh: (self) => {
+      if (is3DActive && S_module) {
+        window.dispatchEvent(new CustomEvent('azimute:carousel-progress', { detail: self.progress }));
+      } else {
+        const newIndex = Math.max(0, Math.min(tourIds.length - 1, Math.round(self.progress * (tourIds.length - 1))));
+        currentIndex = newIndex;
+        syncPhotoControl();
+        updateFallbackCarousel(currentIndex, false);
+      }
+    },
+  });
+}
+
+// Lenis integration guard (Problem 1.7)
+if (window.lenis && window.ScrollTrigger) {
+  try {
+    window.lenis.on('scroll', window.ScrollTrigger.update);
+  } catch (e) {}
+}
+
+// Reconcile visibility and lifecycle
 function reconcile() {
   if (disposed) return;
   const changed = chapter.classList.contains('cinema-reduced') !== reduced.matches;
   chapter.classList.toggle('cinema-reduced', reduced.matches);
   populateSelect();
-  if (visible && animated() && !booting && !initialized && !failed) start();
+
+  if (visible && animated() && !booting && !initialized && !failed) {
+    start();
+  }
   if (changed) syncPhotoControl();
   refresh();
   if (changed) window.ScrollTrigger?.refresh();
 }
 
-const observer = new IntersectionObserver((entries) => {
-  visible = entries[0].isIntersecting;
-  reconcile();
-}, { rootMargin: '240px' });
+const observer = new IntersectionObserver(
+  (entries) => {
+    visible = entries[0].isIntersecting;
+    reconcile();
+  },
+  { rootMargin: '240px' }
+);
 observer.observe(chapter);
 
 addEventListener('azimute:motion', reconcile);
 document.addEventListener('visibilitychange', reconcile);
 reduced.addEventListener('change', reconcile);
 
-// Global keyboard arrow navigation when 3D carousel is in view
-window.addEventListener('keydown', (e) => {
-  if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
-  const box = chapter.getBoundingClientRect();
-  const inView = box.top < window.innerHeight * 0.9 && box.bottom > window.innerHeight * 0.1;
-  if (!inView) return;
-
-  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-    if (currentIndex < tourIds.length - 1) {
-      e.preventDefault();
-      choose(currentIndex + 1);
-    }
-  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-    if (currentIndex > 0) {
-      e.preventDefault();
-      choose(currentIndex - 1);
-    }
-  }
+// Global ScrollTrigger measurement refreshes (Problem 1.5)
+window.addEventListener('load', () => window.ScrollTrigger?.refresh());
+if (document.fonts?.ready) {
+  document.fonts.ready.then(() => window.ScrollTrigger?.refresh());
+}
+let resizeRefreshTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeRefreshTimer);
+  resizeRefreshTimer = setTimeout(() => {
+    window.ScrollTrigger?.refresh();
+  }, 200);
+});
+window.addEventListener('orientationchange', () => {
+  setTimeout(() => {
+    window.ScrollTrigger?.refresh();
+  }, 250);
 });
 
+// ============================================================================
+// Three.js 3D Helical Engine (Problem 1 & 2)
+// ============================================================================
 async function start() {
+  // Prevent duplicate initialization
+  if (booting || initialized || disposed) return;
   booting = true;
+
+  // Problem 3: Check WebGL availability with performance check
+  if (!hasWebGL()) {
+    console.warn('WebGL unavailable or hardware acceleration disabled. Activating 2D fallback carousel.');
+    booting = false;
+    switchTo2DFallback();
+    return;
+  }
+
   const resources = new Set();
   const cleanups = [];
   const pending = new Map();
+  const textureCache = new Map();
   let dead = false;
-  let renderer;
+  let renderer = null;
   let raf = 0;
-  let stats;
+  let stats = null;
 
   const own = (resource) => {
-    if (dead) resource.dispose();
+    if (dead) resource.dispose?.();
     else resources.add(resource);
     return resource;
   };
   const release = (resource) => {
     if (resource) {
-      resource.dispose();
+      resource.dispose?.();
       resources.delete(resource);
     }
   };
@@ -241,20 +576,27 @@ async function start() {
   function dispose() {
     if (dead) return;
     dead = true;
+    is3DActive = false;
     if (raf) cancelAnimationFrame(raf);
     raf = 0;
     pending.forEach((cancel) => cancel());
     pending.clear();
     cleanups.splice(0).forEach((fn) => fn());
-    resources.forEach((resource) => resource.dispose());
+    textureCache.forEach((tex) => tex.dispose?.());
+    textureCache.clear();
+    resources.forEach((resource) => resource.dispose?.());
     resources.clear();
     if (renderer) {
-      renderer.dispose();
+      try { renderer.dispose(); } catch (e) {}
       renderer.domElement.remove();
+      renderer = null;
     }
+    activeRenderer = null;
+    activeCanvas = null;
     if (stats) stats.active = false;
     refresh = () => {};
-    jump = null;
+    jumpTo3D = null;
+    requestDrawFn = () => {};
   }
   destroy = dispose;
 
@@ -267,6 +609,8 @@ async function start() {
       import('./vendor/RoomEnvironment.js'),
       import('./azimute-sculpture.js'),
     ]);
+    S_module = S;
+    window.AZIMUTE_SCULPTURE = S;
 
     if (dead || disposed || !visible || !animated()) {
       booting = false;
@@ -274,7 +618,23 @@ async function start() {
       return;
     }
 
-    renderer = new T.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+    // Problem 3: failIfMajorPerformanceCaveat ensures slow software rasterizers fall back
+    try {
+      renderer = new T.WebGLRenderer({
+        antialias: true,
+        alpha: false,
+        powerPreference: 'high-performance',
+        failIfMajorPerformanceCaveat: true,
+      });
+    } catch (e) {
+      console.warn('Three.js WebGLRenderer creation failed. Switching to 2D fallback:', e);
+      booting = false;
+      dispose();
+      switchTo2DFallback();
+      return;
+    }
+
+    activeRenderer = renderer;
     renderer.outputColorSpace = T.SRGBColorSpace;
     renderer.toneMapping = T.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
@@ -282,22 +642,29 @@ async function start() {
     renderer.transmissionResolutionScale = 0.55;
 
     const canvas = renderer.domElement;
+    activeCanvas = canvas;
     canvas.className = 'cinema-canvas';
     canvas.setAttribute('aria-hidden', 'true');
     host.append(canvas);
 
     const scene = new T.Scene();
+    activeScene = scene;
     const camera = new T.PerspectiveCamera(40, 1, 0.1, 120);
+    activeCamera = camera;
     scene.fog = new T.Fog(0x181c1c, 36, 85);
 
-    const room = new RoomEnvironment();
-    const pmrem = new T.PMREMGenerator(renderer);
-    try {
-      scene.environment = own(pmrem.fromScene(room, 0.055)).texture;
-    } finally {
-      room.dispose();
-      pmrem.dispose();
+    // PMREM Environment creation
+    function rebuildEnvironment() {
+      const room = new RoomEnvironment();
+      const pmrem = new T.PMREMGenerator(renderer);
+      try {
+        scene.environment = own(pmrem.fromScene(room, 0.055)).texture;
+      } finally {
+        room.dispose();
+        pmrem.dispose();
+      }
     }
+    rebuildEnvironment();
 
     const backdrop = S.makeBackdrop(own);
     scene.add(backdrop);
@@ -315,13 +682,8 @@ async function start() {
     scene.add(light);
 
     const sculpture = S.createSculpture(new Map(), own);
+    sculptureRef = sculpture;
     scene.add(sculpture.group);
-
-    const loader = new T.TextureLoader();
-    const textureRecords = new Map();
-    const unavailable = new Set();
-    let inflight = 0;
-    let textureCenter = 0;
 
     stats = {
       frames: 0,
@@ -342,7 +704,7 @@ async function start() {
     };
     window.AZIMUTE_CINEMA_STATS = stats;
 
-    const active = () => visible && canDisplay() && !dead;
+    const active = () => visible && canDisplay() && !dead && !isContextLost;
     let last = 0;
     let elapsed = 0;
     let phase = 0;
@@ -363,7 +725,8 @@ async function start() {
     const pointer = { x: 0, y: 0 };
     const target = { x: 0, y: 0 };
 
-    function loadTexture(url) {
+    // Problem 1.2: Cap texture size to 1536px, avoid re-creating textures on every scroll
+    function loadCappedTexture(url) {
       return new Promise((resolve, reject) => {
         let settled = false;
         const token = {};
@@ -372,154 +735,102 @@ async function start() {
           settled = true;
           clearTimeout(timeout);
           pending.delete(token);
-          reject(Error('Texture unavailable: ' + url));
+          reject(new Error('Texture unavailable: ' + url));
         };
         const timeout = setTimeout(fail, 12000);
         pending.set(token, fail);
-        loader.load(
-          url,
-          (texture) => {
-            if (settled || dead) {
-              texture.dispose();
-              return;
+
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.decoding = 'async';
+        img.onload = () => {
+          if (settled || dead) return;
+          settled = true;
+          clearTimeout(timeout);
+          pending.delete(token);
+
+          const maxDim = 1536;
+          let w = img.naturalWidth || img.width;
+          let h = img.naturalHeight || img.height;
+          let source = img;
+
+          // Cap dimensions to 1536px max
+          if (w > maxDim || h > maxDim) {
+            const scale = Math.min(maxDim / w, maxDim / h);
+            w = Math.round(w * scale);
+            h = Math.round(h * scale);
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d', { alpha: false });
+            if (ctx) {
+              ctx.imageSmoothingEnabled = true;
+              ctx.imageSmoothingQuality = 'high';
+              ctx.drawImage(img, 0, 0, w, h);
+              source = canvas;
             }
-            settled = true;
-            clearTimeout(timeout);
-            pending.delete(token);
-            texture.colorSpace = T.SRGBColorSpace;
-            texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-            resolve(own(texture));
-          },
-          undefined,
-          fail
-        );
+          }
+
+          const texture = new T.Texture(source);
+          texture.colorSpace = T.SRGBColorSpace;
+          const isPowerOfTwo = (w & (w - 1)) === 0 && (h & (h - 1)) === 0;
+          texture.generateMipmaps = isPowerOfTwo;
+          texture.minFilter = isPowerOfTwo ? T.LinearMipmapLinearFilter : T.LinearFilter;
+          texture.magFilter = T.LinearFilter;
+          texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+          texture.needsUpdate = true;
+          resolve(own(texture));
+        };
+        img.onerror = fail;
+        img.src = url;
       });
     }
 
-    const recordFor = (id) => {
-      if (!textureRecords.has(id)) textureRecords.set(id, {});
-      return textureRecords.get(id);
-    };
-
-    function updateTextureStats() {
-      const textures = [...textureRecords.values()].flatMap((record) => Object.values(record));
-      stats.residentTextures = textures.length;
-      stats.highResolutionTextures = [...textureRecords.values()].filter((r) => r.high || r.native).length;
-      stats.residentPhotoBytes = textures.reduce((sum, tex) => sum + (tex.image?.width || 1000) * (tex.image?.height || 600) * 4 * 1.33, 0);
-      stats.inflightTextures = inflight;
-    }
-
-    function refreshResidency() {
-      textureRecords.forEach((record, id) => {
-        const distance = Math.abs(tourIds.indexOf(id) - textureCenter);
-        if (record.native && distance > 0) {
-          release(record.native);
-          delete record.native;
-        }
-        if (record.high && distance > 2) {
-          release(record.high);
-          delete record.high;
-        }
-        sculpture.setTexture(id, record.native || record.high || record.low || null);
-      });
-      updateTextureStats();
-    }
-
-    function requests() {
-      const order = [0, 1, -1, 2, -2, 3, -3, 4, -4]
-        .map((offset) => textureCenter + offset)
-        .filter((idx) => idx >= 0 && idx < tourIds.length);
-      const list = [];
-      for (const idx of order) {
-        const id = tourIds[idx];
-        const item = getMedia(id);
-        if (item) list.push({ id, kind: 'low', url: item.thumbnail || item.src });
-      }
-      if (innerWidth > 700) {
-        for (const idx of order.filter((i) => Math.abs(i - textureCenter) <= 2)) {
-          const id = tourIds[idx];
-          const item = getMedia(id);
-          if (!item) continue;
-          const native = idx === textureCenter && item.width < 2000 && host.clientWidth * 0.74 * renderer.getPixelRatio() > 1350;
-          const job = { id, kind: native ? 'native' : 'high', url: native ? item.src : item.texture || item.src };
-          if (idx === textureCenter) list.splice(2, 0, job);
-          else list.push(job);
-        }
-      }
-      return list;
-    }
-
-    const loading = new Set();
-    function pumpTextures() {
-      if (dead || !visible || document.hidden || root.classList.contains('viewer-open')) return;
-      while (inflight < 3) {
-        const job = requests().find(
-          (j) => !recordFor(j.id)[j.kind] && !loading.has(`${j.id}:${j.kind}`) && !unavailable.has(`${j.id}:${j.kind}`)
-        );
-        if (!job) break;
-        const key = `${job.id}:${job.kind}`;
-        inflight++;
-        loading.add(key);
-        updateTextureStats();
-        loadTexture(job.url)
-          .then((texture) => {
-            if (dead) return;
-            const distance = Math.abs(tourIds.indexOf(job.id) - textureCenter);
-            if ((job.kind === 'native' && distance > 0) || (job.kind === 'high' && distance > 2)) {
-              release(texture);
-              return;
-            }
-            const record = recordFor(job.id);
-            record[job.kind] = texture;
-            sculpture.setTexture(job.id, record.native || record.high || record.low);
-            chapter.classList.add('cinema-ready');
-            requestDraw();
-          })
-          .catch(() => {
-            unavailable.add(key);
-          })
-          .finally(() => {
-            inflight--;
-            loading.delete(key);
-            if (!dead) {
-              updateTextureStats();
-              pumpTextures();
-            }
-          });
-      }
-    }
-
-    // Preload universe backdrop
-    loadTexture('assets/crystal/azimute-crystal-universe.webp')
+    // Load universe backdrop
+    loadCappedTexture('assets/crystal/azimute-crystal-universe.webp')
       .then((texture) => {
         if (dead) return;
         backdrop.material.uniforms.uTexture.value = texture;
         backdrop.material.uniforms.uHasTexture.value = 1;
-        backdrop.material.uniforms.uImageAspect.value = texture.image.width / texture.image.height;
+        backdrop.material.uniforms.uImageAspect.value = (texture.image?.width || 16) / (texture.image?.height || 9);
         requestDraw();
       })
       .catch(() => {});
 
-    // Preload first 3 photo textures immediately
-    [0, 1, 2].forEach((offset) => {
-      const id = tourIds[offset];
+    // Preload & Cache all 17 textures smoothly without thrashing
+    const loadingIds = new Set();
+    function loadProjectTexture(id) {
+      if (textureCache.has(id) || loadingIds.has(id) || dead) return;
       const item = getMedia(id);
-      if (item) {
-        loadTexture(item.thumbnail || item.src)
-          .then((tex) => {
-            if (dead) return;
-            const rec = recordFor(id);
-            rec.low = tex;
-            sculpture.setTexture(id, tex);
-            chapter.classList.add('cinema-ready');
-            requestDraw();
-          })
-          .catch(() => {});
-      }
-    });
+      if (!item) return;
 
+      loadingIds.add(id);
+      loadCappedTexture(item.texture || item.src)
+        .then((tex) => {
+          if (dead) {
+            tex.dispose();
+            return;
+          }
+          textureCache.set(id, tex);
+          sculpture.setTexture(id, tex);
+          chapter.classList.add('cinema-ready');
+          requestDraw();
+        })
+        .catch(() => {})
+        .finally(() => {
+          loadingIds.delete(id);
+        });
+    }
+
+    // Prioritize loading: load initial 4 immediately, then queue the rest
+    [0, 1, 2, 3].forEach((idx) => loadProjectTexture(tourIds[idx]));
+    setTimeout(() => {
+      tourIds.forEach((id) => loadProjectTexture(id));
+    }, 400);
+
+    // Responsive resize with devicePixelRatio capped on weak/mobile devices (Problem ALSO)
     function resize() {
-      if (dead) return;
+      if (dead || isContextLost) return;
       const box = host.getBoundingClientRect();
       const width = Math.max(1, Math.round(box.width));
       const height = Math.max(1, Math.round(box.height));
@@ -527,9 +838,10 @@ async function start() {
       lastWidth = width;
       lastHeight = height;
 
-      const area = width * height;
-      const budget = Math.max(1600000, Math.min(4200000, area * 2.2));
-      const dpr = Math.min(devicePixelRatio || 1, 1.75, Math.sqrt(budget / area)) * quality;
+      const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || window.innerWidth < 768;
+      const maxDpr = isMobile ? 1.5 : 1.75;
+      const dpr = Math.min(window.devicePixelRatio || 1, maxDpr) * quality;
+
       renderer.setPixelRatio(dpr);
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
@@ -538,102 +850,109 @@ async function start() {
       backdrop.material.uniforms.uAspect.value = camera.aspect;
     }
 
+    // Problem 1.4: Wrap render in try/catch so a single error never kills the RAF loop permanently
     function render(now) {
       raf = 0;
       if (!active()) {
-        stats.active = false;
+        if (stats) stats.active = false;
         return;
       }
       const isAnimated = animated();
-      const raw = last ? now - last : 16.667;
-      const dt = Math.min(raw, 64) / 1000;
-      last = now;
-      if (isAnimated) elapsed += dt;
+      try {
+        const raw = last ? now - last : 16.667;
+        const dt = Math.min(raw, 64) / 1000;
+        last = now;
+        if (isAnimated) elapsed += dt;
 
-      // Smooth damping toward target phase if programmatically set
-      if (targetPhase !== null && !dragActive) {
-        phase += (targetPhase - phase) * S.damping(7.5, dt);
-        if (Math.abs(targetPhase - phase) < 0.0002) {
-          phase = targetPhase;
-          targetPhase = null;
+        // Smooth damping toward targetPhase if programmatically navigating
+        if (targetPhase !== null && !dragActive) {
+          phase += (targetPhase - phase) * S.damping(7.5, dt);
+          if (Math.abs(targetPhase - phase) < 0.0002) {
+            phase = targetPhase;
+            targetPhase = null;
+            isNavigating = false;
+          }
         }
-      }
 
-      drawPhase = isAnimated ? drawPhase + (phase - drawPhase) * S.damping(9, dt) : phase;
-      pointer.x += (target.x - pointer.x) * S.damping(2.7, dt);
-      pointer.y += (target.y - pointer.y) * S.damping(2.7, dt);
+        drawPhase = isAnimated ? drawPhase + (phase - drawPhase) * S.damping(9, dt) : phase;
+        pointer.x += (target.x - pointer.x) * S.damping(2.7, dt);
+        pointer.y += (target.y - pointer.y) * S.damping(2.7, dt);
 
-      const box = host.getBoundingClientRect();
-      const containerAspect = camera.aspect || (box.width / Math.max(1, box.height));
-      const pose = S.cameraPose(drawPhase, { width: box.width, height: box.height, aspect: containerAspect });
-      const index = Math.max(0, Math.min(tourIds.length - 1, Math.round(pose.index)));
+        const box = host.getBoundingClientRect();
+        const containerAspect = camera.aspect || (box.width / Math.max(1, box.height));
+        const pose = S.cameraPose(drawPhase, { width: box.width, height: box.height, aspect: containerAspect });
+        const index = Math.max(0, Math.min(tourIds.length - 1, Math.round(pose.index)));
 
-      if (currentIndex !== index) {
-        currentIndex = index;
-        syncPhotoControl();
-      }
-      if (textureCenter !== index) {
-        textureCenter = index;
-        refreshResidency();
-        pumpTextures();
-      }
-
-      chapter.style.setProperty('--sculpture-expansion', pose.expansion.toFixed(4));
-      chapter.style.setProperty('--sculpture-copy', pose.copyOpacity.toFixed(3));
-      chapter.style.setProperty('--sculpture-copy-y', `${(-S.smooth(0, 0.065, drawPhase) * 24).toFixed(2)}px`);
-
-      resize();
-
-      const actualPose = pose;
-      const tAspect = pose.tAspect ?? Math.max(0, Math.min(1, (containerAspect - 0.6) / 1.0));
-      const camElevation = 0.35 + (0.65 - 0.35) * tAspect;
-      const camOffsetX = 0.2 + (0.6 - 0.2) * tAspect;
-      camera.position.set(
-        camOffsetX + pointer.x * 0.5,
-        actualPose.y + camElevation + pointer.y * 0.35,
-        actualPose.z
-      );
-      camera.lookAt(
-        pointer.x * 0.2,
-        actualPose.lookY,
-        S.HELIX.radius * 0.35
-      );
-
-      light.position.set(actualPose.x + 4.1 * Math.sin(elapsed * 0.16 + 0.8), actualPose.y + 2.5, 8.5 + Math.cos(elapsed * 0.12));
-      backdrop.material.uniforms.uTime.value = elapsed;
-      backdrop.material.uniforms.uProgress.value = drawPhase;
-      backdrop.material.uniforms.uPointer.value.set(pointer.x, pointer.y);
-
-      renderer.render(scene, camera);
-      stats.frames++;
-      stats.active = isAnimated;
-      stats.currentPhotoId = tourIds[index];
-      stats.currentPhotoIndex = index;
-      stats.progress = drawPhase;
-
-      if (stats.frames > 20 && isAnimated) {
-        samples.push(raw);
-        if (samples.length > 180) samples.shift();
-        if (raw > 50) stats.longFrames++;
-      }
-      if (stats.frames % 90 === 0 && samples.length) {
-        const sorted = [...samples].sort((a, b) => a - b);
-        stats.p95FrameMs = sorted[Math.floor((sorted.length - 1) * 0.95)];
-        stats.averageFrameMs = samples.reduce((sum, x) => sum + x, 0) / samples.length;
-        if (stats.frames >= 270 && stats.averageFrameMs > 30 && quality > 0.8) {
-          quality = 0.8;
-          stats.quality = quality;
-          lastWidth = 0;
-          resize();
+        if (currentIndex !== index) {
+          currentIndex = index;
+          syncPhotoControl();
         }
+
+        chapter.style.setProperty('--sculpture-expansion', pose.expansion.toFixed(4));
+        chapter.style.setProperty('--sculpture-copy', pose.copyOpacity.toFixed(3));
+        chapter.style.setProperty('--sculpture-copy-y', `${(-S.smooth(0, 0.065, drawPhase) * 24).toFixed(2)}px`);
+
+        resize();
+
+        const actualPose = pose;
+        const tAspect = pose.tAspect ?? Math.max(0, Math.min(1, (containerAspect - 0.6) / 1.0));
+        const camElevation = 0.35 + (0.65 - 0.35) * tAspect;
+        const camOffsetX = 0.2 + (0.6 - 0.2) * tAspect;
+        camera.position.set(
+          camOffsetX + pointer.x * 0.5,
+          actualPose.y + camElevation + pointer.y * 0.35,
+          actualPose.z
+        );
+        camera.lookAt(
+          pointer.x * 0.2,
+          actualPose.lookY,
+          S.HELIX.radius * 0.35
+        );
+
+        light.position.set(actualPose.x + 4.1 * Math.sin(elapsed * 0.16 + 0.8), actualPose.y + 2.5, 8.5 + Math.cos(elapsed * 0.12));
+        backdrop.material.uniforms.uTime.value = elapsed;
+        backdrop.material.uniforms.uProgress.value = drawPhase;
+        backdrop.material.uniforms.uPointer.value.set(pointer.x, pointer.y);
+
+        renderer.render(scene, camera);
+
+        if (stats) {
+          stats.frames++;
+          stats.active = isAnimated;
+          stats.currentPhotoId = tourIds[index];
+          stats.currentPhotoIndex = index;
+          stats.progress = drawPhase;
+          stats.residentTextures = textureCache.size;
+        }
+
+        if (stats && stats.frames > 20 && isAnimated) {
+          samples.push(raw);
+          if (samples.length > 180) samples.shift();
+          if (raw > 50) stats.longFrames++;
+        }
+        if (stats && stats.frames % 90 === 0 && samples.length) {
+          const sorted = [...samples].sort((a, b) => a - b);
+          stats.p95FrameMs = sorted[Math.floor((sorted.length - 1) * 0.95)];
+          stats.averageFrameMs = samples.reduce((sum, x) => sum + x, 0) / samples.length;
+          if (stats.frames >= 270 && stats.averageFrameMs > 32 && quality > 0.8) {
+            quality = 0.8;
+            stats.quality = quality;
+            lastWidth = 0;
+            resize();
+          }
+        }
+
+        if (!drawn) {
+          drawn = true;
+          chapter.classList.add('cinema-ready');
+        }
+      } catch (renderError) {
+        console.error('3D Carousel render loop caught error:', renderError);
       }
 
-      if (!drawn) {
-        drawn = true;
-        chapter.classList.add('cinema-ready');
+      if (isAnimated && !dead && !isContextLost) {
+        raf = requestAnimationFrame(render);
       }
-
-      if (isAnimated) raf = requestAnimationFrame(render);
     }
 
     function requestDraw() {
@@ -642,6 +961,7 @@ async function start() {
         raf = requestAnimationFrame(render);
       }
     }
+    requestDrawFn = requestDraw;
 
     const ro = new ResizeObserver(() => {
       resize();
@@ -651,48 +971,52 @@ async function start() {
     cleanups.push(() => ro.disconnect());
     resize();
 
-    // ScrollTrigger integration
-    let trigger = null;
-    if (window.ScrollTrigger) {
-      const chapterStart = () => chapter.getBoundingClientRect().top + (document.scrollingElement?.scrollTop || scrollY);
-      trigger = ScrollTrigger.create({
-        trigger: chapter,
-        start: chapterStart,
-        end: () => chapterStart() + Math.max(1, chapter.offsetHeight - innerHeight),
-        onUpdate: (self) => {
-          if (!dragActive) {
-            phase = self.progress;
-            requestDraw();
-          }
-        },
-        onRefresh: (self) => {
-          if (!dragActive) {
-            phase = self.progress;
-            requestDraw();
-          }
-        },
-      });
-      phase = drawPhase = trigger.progress;
-      textureCenter = Math.round(S.tourIndex(phase));
-      currentIndex = textureCenter;
-      syncPhotoControl();
-      cleanups.push(() => trigger.kill());
-    }
+    // Problem 1.1: WebGL Context Loss & Restoration
+    const onContextLost = (event) => {
+      event.preventDefault(); // MANDATORY: allow context restoration
+      console.warn('WebGL context lost on cinema canvas. Pausing render loop and awaiting recovery...');
+      isContextLost = true;
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+      clearTimeout(restoreTimeout);
+      restoreTimeout = setTimeout(() => {
+        if (isContextLost) {
+          console.warn('WebGL context restoration timed out. Switching to 2D fallback.');
+          dispose();
+          switchTo2DFallback();
+        }
+      }, 3500);
+    };
 
-    jump = (index, smoothScroll = true) => {
-      const progressVal = S.progressForPhoto(index);
-      targetPhase = progressVal;
-      requestDraw();
-      if (trigger && smoothScroll) {
-        const targetScroll = trigger.start + (trigger.end - trigger.start) * progressVal;
-        window.scrollTo({
-          top: targetScroll,
-          behavior: root.classList.contains('motion-paused') ? 'instant' : 'smooth',
+    const onContextRestored = () => {
+      console.log('WebGL context restored! Rebuilding environment, materials, and textures...');
+      clearTimeout(restoreTimeout);
+      isContextLost = false;
+      try {
+        rebuildEnvironment();
+        textureCache.forEach((tex, id) => {
+          tex.needsUpdate = true;
+          sculpture.setTexture(id, tex);
         });
+        chapter.classList.add('cinema-ready');
+        requestDraw();
+      } catch (restoreErr) {
+        console.error('Failed to restore WebGL context materials:', restoreErr);
+        dispose();
+        switchTo2DFallback();
       }
     };
 
-    // Card Raycasting
+    canvas.addEventListener('webglcontextlost', onContextLost);
+    canvas.addEventListener('webglcontextrestored', onContextRestored);
+    cleanups.push(() => {
+      canvas.removeEventListener('webglcontextlost', onContextLost);
+      canvas.removeEventListener('webglcontextrestored', onContextRestored);
+    });
+
+    // Raycaster for card taps / clicks in 3D scene
     const raycaster = new T.Raycaster();
     const pickPoint = new T.Vector2();
 
@@ -742,7 +1066,7 @@ async function start() {
 
           const pixelsPerCard = Math.max(140, host.clientWidth * 0.22);
           const stepPhase = 0.87 / (tourIds.length - 1);
-          const phaseDelta = -(e.clientX - dragStartX) / pixelsPerCard * stepPhase;
+          const phaseDelta = -((e.clientX - dragStartX) / pixelsPerCard) * stepPhase;
           phase = Math.max(0, Math.min(1, dragStartPhase + phaseDelta));
           targetPhase = phase;
           requestDraw();
@@ -756,7 +1080,7 @@ async function start() {
         }
       }
 
-      // Parallax tilt on hover
+      // Parallax tilt on mouse hover
       if (e.pointerType === 'touch' || !animated()) return;
       const box = host.getBoundingClientRect();
       target.x = Math.max(-0.5, Math.min(0.5, (e.clientX - box.left) / box.width - 0.5));
@@ -770,10 +1094,9 @@ async function start() {
       try { canvas.releasePointerCapture?.(e.pointerId); } catch (err) {}
 
       if (isDragging) {
-        // Momentum flick
         const inertia = -dragVelocity * 0.0018;
         const snapIndex = Math.max(0, Math.min(tourIds.length - 1, Math.round(S.tourIndex(phase + inertia))));
-        choose(snapIndex, true);
+        goToSlide(snapIndex, true);
         isDragging = false;
         return;
       }
@@ -784,7 +1107,7 @@ async function start() {
         if (hit.index === currentIndex) {
           openMedia(hit.mediaId);
         } else {
-          choose(hit.index, true);
+          goToSlide(hit.index, true);
         }
       }
     };
@@ -812,11 +1135,9 @@ async function start() {
       canvas.removeEventListener('pointerleave', onPointerCancel);
     });
 
-    // Mouse wheel navigation directly inside 3D chapter
-    // Natural wheel navigation: allow window and ScrollTrigger to drive rotation smoothly without fighting
+    // Horizontal wheel navigation over carousel
     let wheelDebounce = 0;
     const onWheel = (e) => {
-      // If user uses trackpad or mousewheel with shiftKey or horizontal wheel over carousel
       if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 20) {
         const now = Date.now();
         if (now - wheelDebounce < 240) return;
@@ -824,52 +1145,54 @@ async function start() {
         const dir = e.deltaX > 0 ? 1 : -1;
         const nextIdx = currentIndex + dir;
         if (nextIdx >= 0 && nextIdx < tourIds.length) {
-          choose(nextIdx, true);
+          goToSlide(nextIdx, true);
         }
       }
     };
     chapter.addEventListener('wheel', onWheel, { passive: true });
     cleanups.push(() => chapter.removeEventListener('wheel', onWheel));
 
+    // Progress updates from ScrollTrigger
+    const onCarouselProgress = (e) => {
+      if (dragActive) return;
+      phase = e.detail;
+      const newIndex = Math.max(0, Math.min(tourIds.length - 1, Math.round(S.tourIndex(phase))));
+      if (currentIndex !== newIndex) {
+        currentIndex = newIndex;
+        syncPhotoControl();
+      }
+      requestDraw();
+    };
+    window.addEventListener('azimute:carousel-progress', onCarouselProgress);
+    cleanups.push(() => window.removeEventListener('azimute:carousel-progress', onCarouselProgress));
+
+    jumpTo3D = (index) => {
+      const progressVal = S.progressForPhoto(index);
+      targetPhase = progressVal;
+      requestDraw();
+    };
+
     refresh = () => {
       if (active()) {
-        unavailable.clear();
-        pumpTextures();
         requestDraw();
       } else if (raf) {
         cancelAnimationFrame(raf);
         raf = 0;
-        stats.active = false;
-        canvas.dataset.renderActive = 'false';
+        if (stats) stats.active = false;
       }
     };
 
-    const contextLost = (event) => {
-      event.preventDefault();
-      failed = true;
-      chapter.classList.remove('cinema-ready');
-      chapter.classList.add('cinema-fallback'); fallbackBadge.hidden = false;
-      syncPhotoControl();
-      dispose();
-      window.ScrollTrigger?.refresh();
-    };
-    canvas.addEventListener('webglcontextlost', contextLost, { once: true });
-    cleanups.push(() => canvas.removeEventListener('webglcontextlost', contextLost));
-
+    is3DActive = true;
     initialized = true;
     booting = false;
     syncPhotoControl();
-    pumpTextures();
-    refresh();
-  } catch (error) {
-    console.error('3D Carousel initialization error:', error);
-    failed = true;
+    requestDraw();
+    setupCarouselScrollTrigger();
+  } catch (err) {
+    console.error('3D Carousel initialization error. Activating 2D fallback:', err);
     booting = false;
     dispose();
-    chapter.classList.remove('cinema-ready');
-    chapter.classList.add('cinema-fallback'); fallbackBadge.hidden = false;
-    syncPhotoControl();
-    window.ScrollTrigger?.refresh();
+    switchTo2DFallback();
   }
 }
 
@@ -883,7 +1206,7 @@ function pageHide(event) {
   observer.disconnect();
   destroy();
   controls.remove();
-  fallback.remove();
+  if (fallbackStage) fallbackStage.remove();
   removeEventListener('azimute:motion', reconcile);
   document.removeEventListener('visibilitychange', reconcile);
   reduced.removeEventListener('change', reconcile);
