@@ -36,7 +36,7 @@
 .architecture-status{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .architecture-chapter.cinema-tour.cinema-fallback,.architecture-chapter.cinema-tour.cinema-reduced{height:100svh;min-height:560px}
 .cinema-fallback .architecture-still,.cinema-reduced .architecture-still{object-fit:contain;filter:none;opacity:1;padding:125px 4vw 150px}
-.cinema-tour.cinema-fallback .architecture-copy,.cinema-tour.cinema-reduced .architecture-copy{opacity:0}
+.cinema-tour.cinema-fallback .architecture-copy, .cinema-tour.cinema-reduced .architecture-copy{opacity:1;transform:none}
 .cinema-tour.cinema-fallback .architectural-depth,.cinema-tour.cinema-reduced .architectural-depth{inset:0;clip-path:none}
 @media(min-width:1800px){.architecture-controls{bottom:30px}.architecture-photo-title{font-size:2.05rem}}
 @media(max-width:700px){
@@ -57,3 +57,8 @@
 }
 @media(max-height:620px) and (min-width:701px){.cinema-tour .architecture-bottom{top:90px}.architecture-controls{bottom:14px}.architecture-photo-title{font-size:20px}.cinema-tour .architecture-copy{top:22%}.cinema-tour .architecture-copy h2{font-size:11vh}.cinema-tour .architecture-caption{display:none}}
 @media(prefers-reduced-motion:reduce){.architecture-chapter.cinema-tour{height:100svh}.architecture-still,.architecture-progress::-webkit-progress-value{transition:none}}
+
+/* Fallback Gallery Mode */
+.cinema-fallback .architecture-still{object-fit:cover;filter:brightness(.85);opacity:1;cursor:pointer;pointer-events:auto;transition:opacity .5s ease}
+.cinema-fallback-badge{position:absolute;top:calc(94px + 2.2vh);left:var(--gutter,5vw);z-index:4;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#e8d1b4;background:#12241bcc;padding:6px 14px;border-radius:4px;border:1px solid #dfc6a940;backdrop-filter:blur(8px);pointer-events:none}
+.cinema-tour.cinema-reduced .cinema-canvas{opacity:1;filter:none}

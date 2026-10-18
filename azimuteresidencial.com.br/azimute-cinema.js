@@ -34,7 +34,14 @@ const fallback = document.createElement('img');
 fallback.className = 'architecture-still';
 fallback.alt = '4 Korners Architectural Project';
 fallback.decoding = 'async';
+fallback.addEventListener('click', () => openCurrentPhoto());
 host.append(fallback);
+
+const fallbackBadge = document.createElement('div');
+fallbackBadge.className = 'cinema-fallback-badge';
+fallbackBadge.textContent = 'High-Resolution Gallery Mode';
+fallbackBadge.hidden = true;
+host.append(fallbackBadge);
 
 const controls = document.createElement('div');
 controls.className = 'architecture-controls';
@@ -165,7 +172,7 @@ select.addEventListener('change', selectPhoto);
 skip.addEventListener('click', skipTour);
 syncPhotoControl();
 
-const canDisplay = () => !document.hidden && !reduced.matches && !root.classList.contains('viewer-open');
+const canDisplay = () => !document.hidden && !root.classList.contains('viewer-open');
 const animated = () => canDisplay() && !root.classList.contains('motion-paused');
 
 function reconcile() {
@@ -520,8 +527,9 @@ async function start() {
       lastWidth = width;
       lastHeight = height;
 
-      const budget = innerWidth <= 700 ? 1600000 : 3400000;
-      const dpr = Math.min(devicePixelRatio, 1.75, Math.sqrt(budget / (width * height))) * quality;
+      const area = width * height;
+      const budget = Math.max(1600000, Math.min(4200000, area * 2.2));
+      const dpr = Math.min(devicePixelRatio || 1, 1.75, Math.sqrt(budget / area)) * quality;
       renderer.setPixelRatio(dpr);
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
@@ -555,7 +563,9 @@ async function start() {
       pointer.x += (target.x - pointer.x) * S.damping(2.7, dt);
       pointer.y += (target.y - pointer.y) * S.damping(2.7, dt);
 
-      const pose = S.cameraPose(drawPhase, innerWidth <= 700, camera.aspect);
+      const box = host.getBoundingClientRect();
+      const containerAspect = camera.aspect || (box.width / Math.max(1, box.height));
+      const pose = S.cameraPose(drawPhase, { width: box.width, height: box.height, aspect: containerAspect });
       const index = Math.max(0, Math.min(tourIds.length - 1, Math.round(pose.index)));
 
       if (currentIndex !== index) {
@@ -574,13 +584,10 @@ async function start() {
 
       resize();
 
-      const actualPose = S.cameraPose(drawPhase, innerWidth <= 700, camera.aspect);
-      sculpture.group.rotation.y = actualPose.rotation + Math.sin(elapsed * 0.11) * 0.009;
-      sculpture.group.position.x = actualPose.x;
-
-      // Position camera with cinematic 3D perspective angle
-      const camElevation = innerWidth <= 700 ? 0.35 : 0.65;
-      const camOffsetX = innerWidth <= 700 ? 0.2 : 0.6;
+      const actualPose = pose;
+      const tAspect = pose.tAspect ?? Math.max(0, Math.min(1, (containerAspect - 0.6) / 1.0));
+      const camElevation = 0.35 + (0.65 - 0.35) * tAspect;
+      const camOffsetX = 0.2 + (0.6 - 0.2) * tAspect;
       camera.position.set(
         camOffsetX + pointer.x * 0.5,
         actualPose.y + camElevation + pointer.y * 0.35,
@@ -806,21 +813,22 @@ async function start() {
     });
 
     // Mouse wheel navigation directly inside 3D chapter
+    // Natural wheel navigation: allow window and ScrollTrigger to drive rotation smoothly without fighting
     let wheelDebounce = 0;
     const onWheel = (e) => {
-      if (Math.abs(e.deltaY) < 18) return;
-      const now = Date.now();
-      if (now - wheelDebounce < 220) return;
-
-      const dir = e.deltaY > 0 ? 1 : -1;
-      const nextIdx = currentIndex + dir;
-      if (nextIdx >= 0 && nextIdx < tourIds.length) {
-        e.preventDefault();
+      // If user uses trackpad or mousewheel with shiftKey or horizontal wheel over carousel
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && Math.abs(e.deltaX) > 20) {
+        const now = Date.now();
+        if (now - wheelDebounce < 240) return;
         wheelDebounce = now;
-        choose(nextIdx, true);
+        const dir = e.deltaX > 0 ? 1 : -1;
+        const nextIdx = currentIndex + dir;
+        if (nextIdx >= 0 && nextIdx < tourIds.length) {
+          choose(nextIdx, true);
+        }
       }
     };
-    chapter.addEventListener('wheel', onWheel, { passive: false });
+    chapter.addEventListener('wheel', onWheel, { passive: true });
     cleanups.push(() => chapter.removeEventListener('wheel', onWheel));
 
     refresh = () => {
@@ -840,7 +848,7 @@ async function start() {
       event.preventDefault();
       failed = true;
       chapter.classList.remove('cinema-ready');
-      chapter.classList.add('cinema-fallback');
+      chapter.classList.add('cinema-fallback'); fallbackBadge.hidden = false;
       syncPhotoControl();
       dispose();
       window.ScrollTrigger?.refresh();
@@ -859,7 +867,7 @@ async function start() {
     booting = false;
     dispose();
     chapter.classList.remove('cinema-ready');
-    chapter.classList.add('cinema-fallback');
+    chapter.classList.add('cinema-fallback'); fallbackBadge.hidden = false;
     syncPhotoControl();
     window.ScrollTrigger?.refresh();
   }

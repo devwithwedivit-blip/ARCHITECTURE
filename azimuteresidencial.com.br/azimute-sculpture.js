@@ -347,29 +347,50 @@ export function tourIndex(progress) {
 export const progressForPhoto = (index) =>
   0.075 + (0.87 * clamp(index, 0, PHOTOGRAPHS.length - 1)) / (PHOTOGRAPHS.length - 1);
 
-export function cameraPose(progress, mobile, aspect = 1.78) {
+export function cameraPose(progress, mobileOrOptions = false, fallbackAspect = 1.78) {
+  let aspect, width, height;
+  if (typeof mobileOrOptions === 'object' && mobileOrOptions !== null) {
+    width = mobileOrOptions.width || 1280;
+    height = mobileOrOptions.height || 800;
+    aspect = mobileOrOptions.aspect || (width / Math.max(1, height));
+  } else {
+    aspect = fallbackAspect;
+    width = mobileOrOptions ? 390 : 1280;
+    height = mobileOrOptions ? 844 : 800;
+  }
+  const safeAspect = Math.max(0.35, aspect);
+  // Continuous frameScale derived smoothly from container aspect ratio:
+  // Narrow portrait (aspect ~0.45-0.75): ~0.74
+  // Wide desktop (aspect >= 1.6): ~0.60
+  // Clamped with sensible min (0.55) and max (0.76)
+  const tAspect = clamp((safeAspect - 0.6) / 1.0, 0, 1);
+  const frameScale = clamp(THREE.MathUtils.lerp(0.74, 0.60, tAspect), 0.55, 0.76);
+
   const enter = smooth(0, 0.08, progress);
   const exit = smooth(0.96, 1, progress);
   const index = tourIndex(progress);
   const y = HELIX.top - index * HELIX.pitch;
   const tan = Math.tan((40 * Math.PI) / 360);
-  const safeAspect = Math.max(0.3, aspect);
-  const frameScale = mobile ? 0.74 : 0.60;
   const distance = Math.max(
     HELIX.width / (2 * tan * safeAspect * frameScale),
     HELIX.height / (2 * tan * 0.54)
   );
 
+  const lateralOffset = THREE.MathUtils.lerp(0.4, 1.2, tAspect);
+  const lookYOffset = THREE.MathUtils.lerp(0.38, 0.20, tAspect);
+
   return {
     index,
     rotation: -index * HELIX.step,
-    x: mobile ? 0.4 * (1 - enter) : 1.2 * (1 - enter),
+    x: lateralOffset * (1 - enter),
     y,
     z: HELIX.radius + distance + 2.4 * (1 - enter) + 1.2 * exit,
     lookX: 0,
-    lookY: y + (mobile ? 0.4 : 0.2),
+    lookY: y + lookYOffset,
     copyOpacity: 1 - smooth(0.005, 0.07, progress),
     expansion: enter,
+    frameScale,
+    tAspect,
   };
 }
 

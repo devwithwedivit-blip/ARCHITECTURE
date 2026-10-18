@@ -2,7 +2,9 @@
   'use strict';
   const root=document.documentElement, reduced=matchMedia('(prefers-reduced-motion: reduce)');
   const motionButton=document.querySelector('.motion-toggle'), header=document.querySelector('.header');
-  let introTimeline, heroTimeline, paused=reduced.matches, introStarted=false, introSettled=!!window.azimuteIntroExpired, introActive=false, introSafety;
+  let storedMotion = null;
+  try { storedMotion = localStorage.getItem('azimute:motion'); } catch(e) {}
+  let introTimeline, heroTimeline, paused = storedMotion !== null ? storedMotion === 'true' : reduced.matches, introStarted=false, introSettled=!!window.azimuteIntroExpired, introActive=false, introSafety;
   let revealTweens=[],photoTweens=[];
   let nightReady=false;
   const heroState={presence:1,night:0};
@@ -29,12 +31,12 @@
     setIntroInert(true);
     gsap.set('.entrance__surface',{opacity:1,clipPath:'inset(0% 0% 0% 0%)'});gsap.set('.entrance__light',{opacity:0,xPercent:-100});gsap.set('.entrance__identity',{opacity:1,y:0});
     heroState.presence=0;heroState.night=0;publishHero();gsap.set(['.hero__content','.header','.hero__scroll'],{opacity:0});
-    introTimeline=gsap.timeline({onComplete:()=>{introActive=false;introSettled=true;clearTimeout(introSafety);setIntroInert(false);root.classList.remove('intro-playing');root.classList.add('intro-done');}})
-      .fromTo('.brand-stroke',{strokeDasharray:1,strokeDashoffset:1},{strokeDashoffset:0,duration:1.2,ease:'power2.inOut'})
-      .fromTo('.brand-orbit',{strokeDasharray:1,strokeDashoffset:1},{strokeDashoffset:0,duration:1.1,ease:'power2.out'},.2)
-      .fromTo('.brand-material',{opacity:0},{opacity:1,duration:.9},.3)
-      .fromTo('.brand-bearing',{opacity:0,y:12},{opacity:1,y:0,duration:.8,ease:'power3.out'},.55)
-      .fromTo('.entrance__name',{opacity:0,y:12,clipPath:'inset(0 100% 0 0)'},{opacity:1,y:0,clipPath:'inset(0 0% 0 0)',duration:1,ease:'power3.out'},.55)
+    introTimeline=gsap.timeline({onComplete:()=>{introActive=false;introSettled=true;clearTimeout(introSafety);setIntroInert(false);root.classList.remove('intro-playing');root.classList.add('intro-done');}});
+    if (document.querySelector('.brand-stroke')) introTimeline.fromTo('.brand-stroke',{strokeDasharray:1,strokeDashoffset:1},{strokeDashoffset:0,duration:1.2,ease:'power2.inOut'},0);
+    if (document.querySelector('.brand-orbit')) introTimeline.fromTo('.brand-orbit',{strokeDasharray:1,strokeDashoffset:1},{strokeDashoffset:0,duration:1.1,ease:'power2.out'},0.2);
+    if (document.querySelector('.brand-material')) introTimeline.fromTo('.brand-material',{opacity:0},{opacity:1,duration:.9},0.3);
+    if (document.querySelector('.brand-bearing')) introTimeline.fromTo('.brand-bearing',{opacity:0,y:12},{opacity:1,y:0,duration:.8,ease:'power3.out'},0.55);
+    introTimeline.fromTo('.entrance__name',{opacity:0,y:12,clipPath:'inset(0 100% 0 0)'},{opacity:1,y:0,clipPath:'inset(0 0% 0 0)',duration:1,ease:'power3.out'},.55)
       .to('.entrance__light',{opacity:.8,xPercent:150,duration:2.1,ease:'sine.inOut'},.3)
       .to('.entrance__identity',{y:-18,opacity:0,duration:.5},1.9)
       .to('.entrance__surface',{clipPath:'inset(0% 0% 100% 0%)',duration:1.25,ease:'power4.inOut'},2.05)
@@ -88,6 +90,7 @@
   }
   motionButton.addEventListener('click',()=>{
     paused=!paused;root.classList.toggle('motion-paused',paused);
+    try { localStorage.setItem('azimute:motion', String(paused)); } catch (e) {}
     motionButton.setAttribute('aria-pressed',String(paused));motionButton.setAttribute('aria-label',paused?'Resume animations':'Reduce animations');motionButton.querySelector('.motion-icon').textContent=paused?'▷':'Ⅱ';
     // Pausing ambient movement must not change document height or the reading position.
     if(heroTimeline?.scrollTrigger){const scrub=heroTimeline.scrollTrigger.getTween();if(scrub){scrub.duration(paused?0:.65);if(paused)scrub.progress(1);else scrub.resume();}}
