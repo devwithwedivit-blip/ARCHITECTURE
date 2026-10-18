@@ -36,8 +36,9 @@
     if (document.querySelector('.brand-orbit')) introTimeline.fromTo('.brand-orbit',{strokeDasharray:1,strokeDashoffset:1},{strokeDashoffset:0,duration:1.1,ease:'power2.out'},0.2);
     if (document.querySelector('.brand-material')) introTimeline.fromTo('.brand-material',{opacity:0},{opacity:1,duration:.9},0.3);
     if (document.querySelector('.brand-bearing')) introTimeline.fromTo('.brand-bearing',{opacity:0,y:12},{opacity:1,y:0,duration:.8,ease:'power3.out'},0.55);
-    introTimeline.fromTo('.entrance__name',{opacity:0,y:12,clipPath:'inset(0 100% 0 0)'},{opacity:1,y:0,clipPath:'inset(0 0% 0 0)',duration:1,ease:'power3.out'},.55)
-      .to('.entrance__light',{opacity:.8,xPercent:150,duration:2.1,ease:'sine.inOut'},.3)
+    if (document.querySelector('.entrance__name')) introTimeline.fromTo('.entrance__name',{opacity:0,y:12,clipPath:'inset(0 100% 0 0)'},{opacity:1,y:0,clipPath:'inset(0 0% 0 0)',duration:1,ease:'power3.out'},.55);
+    if (document.querySelector('.entrance__banner')) introTimeline.fromTo('.entrance__banner',{opacity:0,scale:0.96,y:8},{opacity:1,scale:1,y:0,duration:1.1,ease:'power3.out'},.25);
+    introTimeline.to('.entrance__light',{opacity:.8,xPercent:150,duration:2.1,ease:'sine.inOut'},.3)
       .to('.entrance__identity',{y:-18,opacity:0,duration:.5},1.9)
       .to('.entrance__surface',{clipPath:'inset(0% 0% 100% 0%)',duration:1.25,ease:'power4.inOut'},2.05)
       .to('.entrance__light',{opacity:0,duration:.3},2.15)
