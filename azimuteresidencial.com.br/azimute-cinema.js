@@ -34,6 +34,13 @@ let restoreTimeout = null;
 let isNavigating = false;
 let navSafetyTimeout = null;
 
+let phase = 0;
+let drawPhase = 0;
+let targetPhase = null;
+let dragActive = false;
+let isDragging = false;
+let raf = 0;
+
 let trigger = null;
 let activeRenderer = null;
 let activeCanvas = null;
@@ -330,7 +337,8 @@ export function goToSlide(index, smooth = true) {
   isNavigating = true;
   navSafetyTimeout = setTimeout(() => {
     isNavigating = false;
-  }, 1000);
+    targetPhase = null;
+  }, 800);
 
   // Sync scroll position if ScrollTrigger is active
   if (trigger) {
@@ -339,17 +347,13 @@ export function goToSlide(index, smooth = true) {
       : (targetIndex / (tourIds.length - 1));
 
     const targetScroll = trigger.start + (trigger.end - trigger.start) * targetProgress;
-    if (smooth && !root.classList.contains('motion-paused') && !reduced.matches) {
-      window.scrollTo({
-        top: targetScroll,
-        behavior: 'smooth',
-      });
-    } else {
-      window.scrollTo({
-        top: targetScroll,
-        behavior: 'instant',
-      });
+    if (window.gsap) {
+      window.gsap.killTweensOf(window);
     }
+    window.scrollTo({
+      top: targetScroll,
+      behavior: smooth && !root.classList.contains('motion-paused') && !reduced.matches ? 'smooth' : 'instant',
+    });
   }
 
   // Update 3D helix target
@@ -424,18 +428,18 @@ function setupCarouselScrollTrigger() {
 
   trigger = window.ScrollTrigger.create({
     trigger: chapter,
-    pin: true,
+    pin: false, // No pin; the canvas is kept on screen by CSS position: sticky
     start: 'top top',
-    end: () => '+=' + Math.max(window.innerHeight * 4, window.innerHeight * 5.5),
+    end: 'bottom bottom',
     scrub: 0.8,
     invalidateOnRefresh: true,
     snap: {
       snapTo: (val) => {
-        const first = snapPoints[0] || 0.05;
-        const last = snapPoints[snapPoints.length - 1] || 0.95;
+        const first = snapPoints[0] || 0.075;
+        const last = snapPoints[snapPoints.length - 1] || 0.945;
         // Snap to extremes to allow clean entry and exit scrolling
-        if (val < first * 0.4) return 0;
-        if (val > last + (1 - last) * 0.6) return 1;
+        if (val < first * 0.5) return 0;
+        if (val > last + (1 - last) * 0.5) return 1;
 
         let closest = snapPoints[0];
         let minDiff = Math.abs(val - closest);
@@ -448,39 +452,77 @@ function setupCarouselScrollTrigger() {
         }
         return closest;
       },
-      duration: { min: 0.15, max: 0.45 },
-      delay: 0.1,
+      duration: { min: 0.15, max: 0.4 },
+      delay: 0.05,
       ease: 'power2.out',
       onComplete: () => {
         isNavigating = false;
+        targetPhase = null;
       },
       onInterrupt: () => {
         isNavigating = false;
+        targetPhase = null;
       },
     },
     onUpdate: (self) => {
-      if (is3DActive && S_module) {
-        window.dispatchEvent(new CustomEvent('azimute:carousel-progress', { detail: self.progress }));
-      } else {
-        const newIndex = Math.max(0, Math.min(tourIds.length - 1, Math.round(self.progress * (tourIds.length - 1))));
-        if (currentIndex !== newIndex) {
-          currentIndex = newIndex;
-          syncPhotoControl();
-          updateFallbackCarousel(currentIndex, false);
-        }
-      }
+      onScrollProgress(self.progress);
     },
     onRefresh: (self) => {
-      if (is3DActive && S_module) {
-        window.dispatchEvent(new CustomEvent('azimute:carousel-progress', { detail: self.progress }));
-      } else {
-        const newIndex = Math.max(0, Math.min(tourIds.length - 1, Math.round(self.progress * (tourIds.length - 1))));
-        currentIndex = newIndex;
-        syncPhotoControl();
-        updateFallbackCarousel(currentIndex, false);
-      }
+      onScrollProgress(self.progress);
     },
   });
+}
+
+function onScrollProgress(progress) {
+  // Clear any stuck drag or programmatic navigation flags when scroll updates
+  dragActive = false;
+  isDragging = false;
+  targetPhase = null;
+  isNavigating = false;
+
+  if (is3DActive && S_module) {
+    window.dispatchEvent(new CustomEvent('azimute:carousel-progress', { detail: progress }));
+  } else {
+    const newIndex = Math.max(0, Math.min(tourIds.length - 1, Math.round(progress * (tourIds.length - 1))));
+    if (currentIndex !== newIndex) {
+      currentIndex = newIndex;
+      syncPhotoControl();
+      updateFallbackCarousel(currentIndex, false);
+    }
+  }
+}
+
+// Temporary [DEBUG] logs every 500ms while the section is active
+let debugInterval = null;
+function updateDebugLogger() {
+  if (visible && animated() && !debugInterval) {
+    debugInterval = setInterval(() => {
+      if (!visible) return;
+      const scrollProg = trigger ? Number(trigger.progress.toFixed(4)) : null;
+      const curDrawPhase = Number(drawPhase.toFixed(4));
+      const targetIdx = S_module ? Math.max(0, Math.min(tourIds.length - 1, Math.round(S_module.tourIndex(drawPhase)))) : currentIndex;
+      const debugData = {
+        progress: curDrawPhase,
+        scrollProgress: scrollProg,
+        targetIndex: targetIdx,
+        currentIndex: currentIndex,
+        flags: {
+          dragActive,
+          isDragging,
+          isNavigating,
+          targetPhase: targetPhase !== null ? Number(targetPhase.toFixed(4)) : null,
+          is3DActive,
+          isContextLost,
+          visible,
+          hasRaf: Boolean(raf),
+        }
+      };
+      console.log(`[DEBUG] progress=${curDrawPhase} scroll=${scrollProg} targetIdx=${targetIdx} currentIdx=${currentIndex} flags=${JSON.stringify(debugData.flags)}`, debugData);
+    }, 500);
+  } else if ((!visible || !animated()) && debugInterval) {
+    clearInterval(debugInterval);
+    debugInterval = null;
+  }
 }
 
 // Lenis integration guard (Problem 1.7)
@@ -503,6 +545,7 @@ function reconcile() {
   if (changed) syncPhotoControl();
   refresh();
   if (changed) window.ScrollTrigger?.refresh();
+  updateDebugLogger();
 }
 
 const observer = new IntersectionObserver(
@@ -558,7 +601,7 @@ async function start() {
   const textureCache = new Map();
   let dead = false;
   let renderer = null;
-  let raf = 0;
+  raf = 0;
   let stats = null;
 
   const own = (resource) => {
@@ -707,11 +750,11 @@ async function start() {
     const active = () => visible && canDisplay() && !dead && !isContextLost;
     let last = 0;
     let elapsed = 0;
-    let phase = 0;
-    let drawPhase = 0;
-    let targetPhase = null;
-    let dragActive = false;
-    let isDragging = false;
+    phase = 0;
+    drawPhase = 0;
+    targetPhase = null;
+    dragActive = false;
+    isDragging = false;
     let dragStartX = 0;
     let dragStartY = 0;
     let dragLastX = 0;
@@ -866,11 +909,13 @@ async function start() {
 
         // Smooth damping toward targetPhase if programmatically navigating
         if (targetPhase !== null && !dragActive) {
-          phase += (targetPhase - phase) * S.damping(7.5, dt);
-          if (Math.abs(targetPhase - phase) < 0.0002) {
+          const diff = targetPhase - phase;
+          if (Math.abs(diff) < 0.0005) {
             phase = targetPhase;
             targetPhase = null;
             isNavigating = false;
+          } else {
+            phase += diff * S.damping(7.5, dt);
           }
         }
 
@@ -895,6 +940,9 @@ async function start() {
         resize();
 
         const actualPose = pose;
+        sculpture.group.rotation.y = actualPose.rotation + Math.sin(elapsed * 0.11) * 0.009;
+        sculpture.group.position.x = actualPose.x;
+
         const tAspect = pose.tAspect ?? Math.max(0, Math.min(1, (containerAspect - 0.6) / 1.0));
         const camElevation = 0.35 + (0.65 - 0.35) * tAspect;
         const camOffsetX = 0.2 + (0.6 - 0.2) * tAspect;
@@ -1127,12 +1175,25 @@ async function start() {
     canvas.addEventListener('pointercancel', onPointerCancel);
     canvas.addEventListener('pointerleave', onPointerCancel);
 
+    // Global release guard to ensure dragActive is NEVER stuck if pointer releases outside canvas
+    const onGlobalPointerUp = () => {
+      if (dragActive || isDragging) {
+        dragActive = false;
+        isDragging = false;
+        canvas.classList.remove('is-dragging');
+      }
+    };
+    window.addEventListener('pointerup', onGlobalPointerUp, { passive: true });
+    window.addEventListener('pointercancel', onGlobalPointerUp, { passive: true });
+
     cleanups.push(() => {
       canvas.removeEventListener('pointerdown', onPointerDown);
       canvas.removeEventListener('pointermove', onPointerMove);
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointercancel', onPointerCancel);
       canvas.removeEventListener('pointerleave', onPointerCancel);
+      window.removeEventListener('pointerup', onGlobalPointerUp);
+      window.removeEventListener('pointercancel', onGlobalPointerUp);
     });
 
     // Horizontal wheel navigation over carousel
@@ -1154,7 +1215,11 @@ async function start() {
 
     // Progress updates from ScrollTrigger
     const onCarouselProgress = (e) => {
-      if (dragActive) return;
+      // User is scrolling: immediately reset any stuck drag or programmatic targetPhase
+      dragActive = false;
+      isDragging = false;
+      targetPhase = null;
+      isNavigating = false;
       phase = e.detail;
       const newIndex = Math.max(0, Math.min(tourIds.length - 1, Math.round(S.tourIndex(phase))));
       if (currentIndex !== newIndex) {
@@ -1182,12 +1247,17 @@ async function start() {
       }
     };
 
+    if (trigger) {
+      phase = drawPhase = trigger.progress;
+      currentIndex = Math.max(0, Math.min(tourIds.length - 1, Math.round(S.tourIndex(phase))));
+    }
     is3DActive = true;
     initialized = true;
     booting = false;
     syncPhotoControl();
     requestDraw();
     setupCarouselScrollTrigger();
+    window.ScrollTrigger?.refresh();
   } catch (err) {
     console.error('3D Carousel initialization error. Activating 2D fallback:', err);
     booting = false;
