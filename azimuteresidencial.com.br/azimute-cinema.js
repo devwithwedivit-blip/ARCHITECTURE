@@ -492,39 +492,6 @@ function onScrollProgress(progress) {
   }
 }
 
-// Temporary [DEBUG] logs every 500ms while the section is active
-let debugInterval = null;
-function updateDebugLogger() {
-  if (visible && animated() && !debugInterval) {
-    debugInterval = setInterval(() => {
-      if (!visible) return;
-      const scrollProg = trigger ? Number(trigger.progress.toFixed(4)) : null;
-      const curDrawPhase = Number(drawPhase.toFixed(4));
-      const targetIdx = S_module ? Math.max(0, Math.min(tourIds.length - 1, Math.round(S_module.tourIndex(drawPhase)))) : currentIndex;
-      const debugData = {
-        progress: curDrawPhase,
-        scrollProgress: scrollProg,
-        targetIndex: targetIdx,
-        currentIndex: currentIndex,
-        flags: {
-          dragActive,
-          isDragging,
-          isNavigating,
-          targetPhase: targetPhase !== null ? Number(targetPhase.toFixed(4)) : null,
-          is3DActive,
-          isContextLost,
-          visible,
-          hasRaf: Boolean(raf),
-        }
-      };
-      console.log(`[DEBUG] progress=${curDrawPhase} scroll=${scrollProg} targetIdx=${targetIdx} currentIdx=${currentIndex} flags=${JSON.stringify(debugData.flags)}`, debugData);
-    }, 500);
-  } else if ((!visible || !animated()) && debugInterval) {
-    clearInterval(debugInterval);
-    debugInterval = null;
-  }
-}
-
 // Lenis integration guard (Problem 1.7)
 if (window.lenis && window.ScrollTrigger) {
   try {
@@ -545,7 +512,6 @@ function reconcile() {
   if (changed) syncPhotoControl();
   refresh();
   if (changed) window.ScrollTrigger?.refresh();
-  updateDebugLogger();
 }
 
 const observer = new IntersectionObserver(
