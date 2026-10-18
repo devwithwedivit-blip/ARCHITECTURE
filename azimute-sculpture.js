@@ -348,26 +348,27 @@ export const progressForPhoto = (index) =>
   0.075 + (0.87 * clamp(index, 0, PHOTOGRAPHS.length - 1)) / (PHOTOGRAPHS.length - 1);
 
 export function cameraPose(progress, mobile, aspect = 1.78) {
-  const enter = smooth(0, 0.105, progress);
-  const exit = smooth(0.955, 1, progress);
+  const enter = smooth(0, 0.08, progress);
+  const exit = smooth(0.96, 1, progress);
   const index = tourIndex(progress);
   const y = HELIX.top - index * HELIX.pitch;
-  const tan = Math.tan((42 * Math.PI) / 360);
+  const tan = Math.tan((40 * Math.PI) / 360);
   const safeAspect = Math.max(0.3, aspect);
+  const frameScale = mobile ? 0.74 : 0.60;
   const distance = Math.max(
-    HELIX.width / (2 * tan * safeAspect * (mobile ? 0.88 : 0.74)),
-    HELIX.height / (2 * tan * 0.63)
+    HELIX.width / (2 * tan * safeAspect * frameScale),
+    HELIX.height / (2 * tan * 0.54)
   );
 
   return {
     index,
     rotation: -index * HELIX.step,
-    x: mobile ? 0 : 2.1 * (1 - enter),
+    x: mobile ? 0.4 * (1 - enter) : 1.2 * (1 - enter),
     y,
-    z: HELIX.radius + distance + 3.7 * (1 - enter) + 1.8 * exit,
+    z: HELIX.radius + distance + 2.4 * (1 - enter) + 1.2 * exit,
     lookX: 0,
-    lookY: y + (mobile ? 0.55 : 0.25),
-    copyOpacity: 1 - smooth(0.005, 0.065, progress),
+    lookY: y + (mobile ? 0.4 : 0.2),
+    copyOpacity: 1 - smooth(0.005, 0.07, progress),
     expansion: enter,
   };
 }
